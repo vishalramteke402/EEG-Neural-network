@@ -60,4 +60,21 @@ input_df = pd.DataFrame([user_input])
 # ---------------------------------
 # Prediction
 # ---------------------------------
-if st.button("🔍 Pr
+if st.button("🔍 Predict Eye State"):
+
+    # Scale input
+    input_scaled = scaler.transform(input_df)
+
+    # Predict probability
+    prob = model.predict(input_scaled)
+    prob_value = float(prob[0][0])
+
+    # Classification
+    prediction = "CLOSED" if prob_value >= 0.5 else "OPEN"
+
+    # Output
+    st.success(f"👁️ Eye State: **{prediction}**")
+
+    st.subheader("📊 Prediction Probability")
+    st.write(f"Closed: **{prob_value * 100:.2f}%**")
+    st.write(f"Open: **{(1 - prob_value) * 100:.2f}%**")
