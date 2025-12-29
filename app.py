@@ -1,72 +1,64 @@
 import streamlit as st
-import pandas as pd
-import pickle
+import cv2
+import mediapipe as mp
 import numpy as np
 
-# ---------------------------------
-# Page Configuration
-# ---------------------------------
-st.set_page_config(
-    page_title="EEG Eye State Detection (ANN)",
-    layout="centered"
-)
+st.set_page_config(page_title="Real-Time Eye Detection", layout="centered")
+st.title("👁️ Real-Time Eye State Detection (Camera)")
 
-st.title("🧠 EEG Eye State Detection")
-st.write("Prediction using a **pre-trained Neural Network (ANN) model**")
+run = st.checkbox("Start Camera")
 
-# ---------------------------------
-# Load ANN Model (.pkl)
-# ---------------------------------
-@st.cache_resource
-def load_model():
-    with open("cu_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    return model
+FRAME_WINDOW = st.image([])
 
-model = load_model()
+mp_face = mp.solutions.face_mesh
+face_mesh = mp_face.FaceMesh(refine_landmarks=True)
 
-# ---------------------------------
-# EEG Feature Names
-# MUST MATCH TRAINING ORDER
-# ---------------------------------
-feature_names = [
-    'AF3','F7','F3','FC5','T7','P7','O1',
-    'O2','P8','T8','FC6','F4','F8','AF4'
-]
+# Eye landmark indices (MediaPipe)
+LEFT_EYE = [33, 160, 158, 133, 153, 144]
+RIGHT_EYE = [362, 385, 387, 263, 373, 380]
 
-# ---------------------------------
-# Sidebar Inputs
-# ---------------------------------
-st.sidebar.header("🔧 EEG Channel Inputs")
+def eye_aspect_ratio(eye):
+    A = np.linalg.norm(eye[1] - eye[5])
+    B = np.linalg.norm(eye[2] - eye[4])
+    C = np.linalg.norm(eye[0] - eye[3])
+    return (A + B) / (2.0 * C)
 
-user_input = {}
+cap = cv2.VideoCapture(0)
 
-for feature in feature_names:
-    user_input[feature] = st.sidebar.number_input(
-        label=feature,
-        value=0.0,
-        format="%.4f"
-    )
+while run:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-input_df = pd.DataFrame([user_input])
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
 
-# ---------------------------------
-# Prediction
-# ---------------------------------
-if st.button("🔍 Predict Eye State"):
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            h, w, _ = frame.shape
 
-    # ANN usually outputs probability
-    prob = model.predict(input_df)
+            left_eye = np.array(
+                [(int(face_landmarks.landmark[i].x * w),
+                  int(face_landmarks.landmark[i].y * h)) for i in LEFT_EYE]
+            )
 
-    # Handle shape safely
-    prob_value = float(prob[0]) if prob.ndim == 1 else float(prob[0][0])
-    prediction = 1 if prob_value >= 0.5 else 0
+            right_eye = np.array(
+                [(int(face_landmarks.landmark[i].x * w),
+                  int(face_landmarks.landmark[i].y * h)) for i in RIGHT_EYE]
+            )
 
-    if prediction == 1:
-        st.success("👁️ Eye State: **CLOSED**")
-    else:
-        st.success("👁️ Eye State: **OPEN**")
+            ear = (eye_aspect_ratio(left_eye) + eye_aspect_ratio(right_eye)) / 2
 
-    st.subheader("📊 Prediction Probability")
-    st.write(f"Closed: **{prob_value*100:.2f}%**")
-    st.write(f"Open: **{(1 - prob_value)*100:.2f}%**")
+            if ear < 0.25:
+                status = "EYES CLOSED"
+                color = (0, 0, 255)
+            else:
+                status = "EYES OPEN"
+                color = (0, 255, 0)
+
+            cv2.putText(frame, status, (30, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+    FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+cap.release()
