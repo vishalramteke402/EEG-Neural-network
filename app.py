@@ -1,64 +1,63 @@
 import streamlit as st
-import cv2
-import mediapipe as mp
+import pandas as pd
 import numpy as np
+import pickle
+from tensorflow.keras.models import load_model
 
-st.set_page_config(page_title="Real-Time Eye Detection", layout="centered")
-st.title("👁️ Real-Time Eye State Detection (Camera)")
+# ---------------------------------
+# Page configuration
+# ---------------------------------
+st.set_page_config(
+    page_title="EEG Eye State Detection (ANN)",
+    layout="centered"
+)
 
-run = st.checkbox("Start Camera")
+st.title("🧠 EEG Eye State Detection")
+st.write("Real-time prediction using a **trained Neural Network (ANN)**")
 
-FRAME_WINDOW = st.image([])
+# ---------------------------------
+# Load ANN model
+# ---------------------------------
+@st.cache_resource
+def load_ann_model():
+    return load_model("ann_eeg_model.h5")
 
-mp_face = mp.solutions.face_mesh
-face_mesh = mp_face.FaceMesh(refine_landmarks=True)
+model = load_ann_model()
 
-# Eye landmark indices (MediaPipe)
-LEFT_EYE = [33, 160, 158, 133, 153, 144]
-RIGHT_EYE = [362, 385, 387, 263, 373, 380]
+# ---------------------------------
+# Load Scaler
+# ---------------------------------
+@st.cache_resource
+def load_scaler():
+    with open("scaler.pkl", "rb") as f:
+        return pickle.load(f)
 
-def eye_aspect_ratio(eye):
-    A = np.linalg.norm(eye[1] - eye[5])
-    B = np.linalg.norm(eye[2] - eye[4])
-    C = np.linalg.norm(eye[0] - eye[3])
-    return (A + B) / (2.0 * C)
+scaler = load_scaler()
 
-cap = cv2.VideoCapture(0)
+# ---------------------------------
+# EEG Feature Names (ORDER MATTERS!)
+# ---------------------------------
+feature_names = [
+    'AF3','F7','F3','FC5','T7','P7','O1',
+    'O2','P8','T8','FC6','F4','F8','AF4'
+]
 
-while run:
-    ret, frame = cap.read()
-    if not ret:
-        break
+# ---------------------------------
+# Sidebar Inputs
+# ---------------------------------
+st.sidebar.header("🔧 EEG Channel Inputs")
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(rgb)
+user_input = {}
+for feature in feature_names:
+    user_input[feature] = st.sidebar.number_input(
+        label=feature,
+        value=0.0,
+        format="%.4f"
+    )
 
-    if results.multi_face_landmarks:
-        for face_landmarks in results.multi_face_landmarks:
-            h, w, _ = frame.shape
+input_df = pd.DataFrame([user_input])
 
-            left_eye = np.array(
-                [(int(face_landmarks.landmark[i].x * w),
-                  int(face_landmarks.landmark[i].y * h)) for i in LEFT_EYE]
-            )
-
-            right_eye = np.array(
-                [(int(face_landmarks.landmark[i].x * w),
-                  int(face_landmarks.landmark[i].y * h)) for i in RIGHT_EYE]
-            )
-
-            ear = (eye_aspect_ratio(left_eye) + eye_aspect_ratio(right_eye)) / 2
-
-            if ear < 0.25:
-                status = "EYES CLOSED"
-                color = (0, 0, 255)
-            else:
-                status = "EYES OPEN"
-                color = (0, 255, 0)
-
-            cv2.putText(frame, status, (30, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-
-    FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-
-cap.release()
+# ---------------------------------
+# Prediction
+# ---------------------------------
+if st.button("🔍 Pr
