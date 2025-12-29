@@ -1,5 +1,4 @@
 streamlit
-pandas
+opencv-python
+mediapipe
 numpy
-scikit-learn
-tensorflow
